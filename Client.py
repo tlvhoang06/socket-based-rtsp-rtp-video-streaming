@@ -20,7 +20,6 @@ class Client:
 	TEARDOWN = 3
 	
 	# Initiation..
-	print("Test Branch")
 	def __init__(self, master, serveraddr, serverport, rtpport, filename):
 		self.master = master
 		self.master.protocol("WM_DELETE_WINDOW", self.handler)
@@ -151,13 +150,17 @@ class Client:
 		if requestCode == self.SETUP and self.state == self.INIT:
 			threading.Thread(target=self.recvRtspReply).start()
 			# Update RTSP sequence number.
-			# ...
-			
+			self.rtspSeq += 1
+
 			# Write the RTSP request to be sent.
-			# request = ...
-			
+			request = ("SETUP " + self.fileName + " RTSP/1.0\n"
+			   		+ "CSeq: " + str(self.rtspSeq) + "\n"
+					+ "Transport: RTP/UDP; client_port=" + str(self.rtpPort)
+					+ "\n\n"
+			   )
+			self.rtspSocket.send(request.encode())
 			# Keep track of the sent request.
-			# self.requestSent = ...
+			self.requestSent = self.SETUP
 		
 		# Play request
 		elif requestCode == self.PLAY and self.state == self.READY:
