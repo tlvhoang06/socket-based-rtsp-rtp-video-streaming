@@ -158,7 +158,6 @@ class Client:
 					+ "Transport: RTP/UDP; client_port=" + str(self.rtpPort) + "\n"
 					+ "\n"
 			   		)
-			self.rtspSocket.send(request.encode())
 			# Keep track of the sent request.
 			self.requestSent = self.SETUP
 		
@@ -173,7 +172,6 @@ class Client:
 					+ "Session: " + str(self.sessionId) + "\n"
 					+ "\n"
 					)
-			self.rtspSocket.send(request.encode())
 			# Keep track of the sent request.
 			self.requestSent = self.PLAY
 		
@@ -188,7 +186,6 @@ class Client:
 					+ "Session: " + str(self.sessionId) + "\n"
 					+ "\n"
 					)
-			self.rtspSocket.send(request.encode())
 			# Keep track of the sent request.
 			self.requestSent = self.PAUSE
 			
@@ -203,14 +200,13 @@ class Client:
 					+ "Session: " + str(self.sessionId) + "\n"
 					+ "\n"
 					)
-			self.rtspSocket.send(request.encode())
 			# Keep track of the sent request.
 			self.requestSent = self.TEARDOWN
 		else:
 			return
 		
 		# Send the RTSP request using rtspSocket.
-		# ...
+		self.rtspSocket.send(request.encode('utf-8'))
 		
 		print('\nData sent:\n' + request)
 	
