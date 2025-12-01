@@ -20,6 +20,7 @@ class Client:
 	TEARDOWN = 3
 	
 	# Initiation..
+	print("Test Branch")
 	def __init__(self, master, serveraddr, serverport, rtpport, filename):
 		self.master = master
 		self.master.protocol("WM_DELETE_WINDOW", self.handler)
