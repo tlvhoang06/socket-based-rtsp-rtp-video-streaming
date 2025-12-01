@@ -195,13 +195,17 @@ class Client:
 		# Teardown request
 		elif requestCode == self.TEARDOWN and not self.state == self.INIT:
 			# Update RTSP sequence number.
-			# ...
+			self.rtspSeq += 1
 			
 			# Write the RTSP request to be sent.
-			# request = ...
-			
+			request = ("TEARDOWN " + self.fileName + " RTSP/1.0\n"
+					+ "CSeq: " + str(self.rtspSeq) + "\n"
+					+ "Session: " + str(self.sessionId) + "\n"
+					+ "\n"
+					)
+			self.rtspSocket.send(request.encode())
 			# Keep track of the sent request.
-			# self.requestSent = ...
+			self.requestSent = self.TEARDOWN
 		else:
 			return
 		
