@@ -267,14 +267,14 @@ class Client:
 		# TO COMPLETE
 		#-------------
 		# Create a new datagram socket to receive RTP packets from the server
-		# self.rtpSocket = ...
+		self.rtpSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		
 		# Set the timeout value of the socket to 0.5sec
-		# ...
+		self.rtpSocket.settimeout(0.5)
 		
 		try:
 			# Bind the socket to the address using the RTP port given by the client user
-			# ...
+			self.rtpSocket.bind(('', self.rtpPort)) 
 		except:
 			tkMessageBox.showwarning('Unable to Bind', 'Unable to bind PORT=%d' %self.rtpPort)
 
