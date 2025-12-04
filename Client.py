@@ -1,5 +1,5 @@
 from tkinter import *
-from tkinter import messagebox
+import tkinter.messagebox
 from PIL import Image, ImageTk
 import socket, threading, sys, traceback, os
 
@@ -9,9 +9,6 @@ CACHE_FILE_NAME = "cache-"
 CACHE_FILE_EXT = ".jpg"
 
 class Client:
-	# Caching: Add buffer
-	BUFFERING = 3
-
 	INIT = 0
 	READY = 1
 	PLAYING = 2
@@ -24,12 +21,6 @@ class Client:
 	
 	# Initiation..
 	def __init__(self, master, serveraddr, serverport, rtpport, filename):
-		self.BUFF_SIZE = 20  # Frames in buffer before playing
-		self.frameBuffer = {}  # Store received framess {SeqNum : Payload}
-		self.bufferReady = threading.Event() # Flag for buffer overflow
-		self.bufferReady.clear()
-		self.bufferedFrameNbr = 0
-
 		self.master = master
 		self.master.protocol("WM_DELETE_WINDOW", self.handler)
 		self.createWidgets()
@@ -93,11 +84,6 @@ class Client:
 	def playMovie(self):
 		"""Play button handler."""
 		if self.state == self.READY:
-			# Reset frame buffer for new session
-			self.frameBuffer = {}
-			self.bufferedFrameNbr = 0
-			self.bufferReady.clear()
-
 			# Create a new thread to listen for RTP packets
 			threading.Thread(target=self.listenRtp).start()
 			self.playEvent = threading.Event()
@@ -106,39 +92,19 @@ class Client:
 	
 	def listenRtp(self):		
 		"""Listen for RTP packets."""
-		# Count number of showed frames
-		current_play_frame = 0
 		while True:
 			try:
 				data = self.rtpSocket.recv(20480)
 				if data:
 					rtpPacket = RtpPacket()
 					rtpPacket.decode(data)
-
+					
 					currFrameNbr = rtpPacket.seqNum()
 					print("Current Seq Num: " + str(currFrameNbr))
-
-					# If in READY and received packet, switch to BUFFERING
-					if self.state == self.READY and not self.bufferReady.isSet():
-						self.state = self.BUFFERING
-						print("Client Switched to Buffering State.")
-					# If in Buffering, store in Frame Buffer
-					if self.state == self.BUFFERING:
-						if currFrameNbr not in self.frameBuffer:
-							self.frameBuffer[currFrameNbr] = rtpPacket.getPayload()
-							self.bufferedFrameNbr += 1
-							print(f"Buffering frame {currFrameNbr}. Total buffered: {len(self.frameBuffer)}/{self.BUFF_SIZE}")
-
-							# Check if buffer is full
-							if len(self.frameBuffer) >= self.BUFF_SIZE:
-								self.bufferReady.set()
-								print("Buffer is full, ready to play")
-								self.state = self.PLAYING
-								current_play_frame = min(self.frameBuffer.keys())
-								self.frameNbr = current_play_frame - 1
-					# If is Playing, if it is new frame, add to buffer
-					elif self.state == self.PLAYING:
-						pass
+										
+					if currFrameNbr > self.frameNbr: # Discard the late packet
+						self.frameNbr = currFrameNbr
+						self.updateMovie(self.writeFrame(rtpPacket.getPayload()))
 			except:
 				# Stop listening upon requesting PAUSE or TEARDOWN
 				if self.playEvent.isSet(): 
@@ -150,29 +116,7 @@ class Client:
 					self.rtpSocket.shutdown(socket.SHUT_RDWR)
 					self.rtpSocket.close()
 					break
-
-			# Display from Buffer (Only runs in PLAYING state)
-			if self.state == self.PLAYING:
-                # Check if the next sequential frame is available in the buffer
-				next_frame_to_play = current_play_frame + 1
-				if next_frame_to_play in self.frameBuffer:
-                    # Retrieve and remove the next frame from the buffer
-					frame_data = self.frameBuffer.pop(next_frame_to_play)
-
-					# Update the sequence number of the frame being played
-					current_play_frame = next_frame_to_play
-					self.frameNbr = current_play_frame
-                    
-                    # Display the frame (assuming playback speed is controlled by the Server's send rate)
-					self.updateMovie(self.writeFrame(frame_data))
-                    
-				else:
-                    # Buffer starvation: Frame not available. Wait for more packets.
-					print(f"Frame {next_frame_to_play} not in buffer. Waiting...")
-       				# Simplification: Continue looping. The loop will be naturally blocked 
-        			# by the rtpSocket.recv(20480) call until a new packet arrives.
-					pass	
-
+					
 	def writeFrame(self, data):
 		"""Write the received frame to a temp image file. Return the image file."""
 		cachename = CACHE_FILE_NAME + str(self.sessionId) + CACHE_FILE_EXT
@@ -305,7 +249,7 @@ class Client:
 						# Open RTP port.
 						self.openRtpPort() 
 					elif self.requestSent == self.PLAY:
-						pass
+						self.state = self.PLAYING
 					elif self.requestSent == self.PAUSE:
 						self.state = self.READY
 						

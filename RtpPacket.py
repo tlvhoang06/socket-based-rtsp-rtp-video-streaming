@@ -65,3 +65,7 @@ class RtpPacket:
 	def getPacket(self):
 		"""Return RTP packet."""
 		return self.header + self.payload
+	def getMarker(self):
+		"""Return the Marker bit (M)."""
+		# Marker bit (M) là bit cao nhất (bit 8) của byte thứ 2 (header[1])
+		return self.header[1] >> 7
