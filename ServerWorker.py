@@ -1,5 +1,5 @@
 from random import randint
-import sys, traceback, threading, socket
+import sys, traceback, threading, socket, time
 
 from VideoStream import VideoStream
 from RtpPacket import RtpPacket
@@ -75,19 +75,23 @@ class ServerWorker:
 		
 		# Process PLAY request 		
 		elif requestType == self.PLAY:
-			if self.state == self.READY:
-				print("processing PLAY\n")
-				self.state = self.PLAYING
-				
-				# Create a new socket for RTP/UDP
-				self.clientInfo["rtpSocket"] = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-				
-				self.replyRtsp(self.OK_200, seq[1])
-				
-				# Create a new thread and start sending RTP packets
-				self.clientInfo['event'] = threading.Event()
-				self.clientInfo['worker']= threading.Thread(target=self.sendRtp) 
-				self.clientInfo['worker'].start()
+			print("processing PLAY\n")
+
+			self.state = self.PLAYING
+
+			self.clientInfo['event'] = threading.Event()   #Reset event
+			self.clientInfo['event'].clear()
+
+			if "rtpSocket" not in self.clientInfo:
+				self.clientInfo["rtpSocket"] = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) #Create a new socket for RTP/UDP
+
+			self.replyRtsp(self.OK_200, seq[1])
+
+			self.clientInfo['worker'] = threading.Thread(
+				target=self.sendRtp,
+				daemon=True
+			)
+			self.clientInfo['worker'].start()
 		
 		# Process PAUSE request
 		elif requestType == self.PAUSE:
@@ -112,12 +116,13 @@ class ServerWorker:
 			
 	def sendRtp(self):
 		"""Send RTP packets over UDP."""
+		print("[RTP] sendRtp thread started")
 		seq_number = 0  # RTP sequence number (increments for each packet)
 		while True:
-			self.clientInfo['event'].wait(0.05) 
 			
 			# Stop sending if request is PAUSE or TEARDOWN
-			if self.clientInfo['event'].isSet(): 
+			if self.clientInfo['event'].isSet():
+				print("[RTP] sendRtp stopped")
 				break 
 				
 			data = self.clientInfo['videoStream'].nextFrame()
@@ -147,6 +152,7 @@ class ServerWorker:
 					#print('-'*60)
 					#traceback.print_exc(file=sys.stdout)
 					#print('-'*60)
+			time.sleep(0.05)
 
 	def makeRtp(self, payload, seqnum, is_marker=False):
 		"""RTP-packetize the video data."""

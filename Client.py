@@ -101,48 +101,47 @@ class Client:
 	def playMovie(self):
 		"""Play button handler."""
 		if self.state == self.READY:
-			# Create a new thread to listen for RTP packets
-			threading.Thread(target=self.listenRtp).start()
-			self.playEvent = threading.Event()
-			self.playEvent.clear()
+			self.frameBuffer = b''
+			self.frameNbr = 0
 			self.sendRtspRequest(self.PLAY)
 	
-	# HÀM ĐÃ SỬA: BỔ SUNG LOGIC GHÉP NỐI (REASSEMBLY) RTP
 	def listenRtp(self): 		
 		"""Listen for RTP packets, including reassembly logic."""
 		while True:
 			try:
 				# Nhận gói tin với buffer lớn hơn
 				data = self.rtpSocket.recv(65536)
-				if data:
-					rtpPacket = RtpPacket()
-					rtpPacket.decode(data)
+
+				if not data:
+					continue
+				if self.state != self.PLAYING:
+					continue
+
+				rtpPacket = RtpPacket()
+				rtpPacket.decode(data)
 					
-					currFrameNbr = rtpPacket.seqNum()
+				currFrameNbr = rtpPacket.seqNum()
 					
-					# Chỉ xử lý các gói tin có thứ tự lớn hơn hoặc bằng gói tin đã nhận cuối cùng
-					if currFrameNbr >= self.frameNbr: 
+				# Chỉ xử lý các gói tin có thứ tự lớn hơn hoặc bằng gói tin đã nhận cuối cùng
+				if currFrameNbr >= self.frameNbr: 
 						
-						# THÊM PAYLOAD VÀO BUFFER
-						self.frameBuffer += rtpPacket.getPayload()
+					# THÊM PAYLOAD VÀO BUFFER
+					self.frameBuffer += rtpPacket.getPayload()
 						
-						# KIỂM TRA MARKER BIT: Nếu Marker bit = 1, đây là gói tin cuối cùng của Frame
-						if rtpPacket.marker() == 1:
+					# KIỂM TRA MARKER BIT: Nếu Marker bit = 1, đây là gói tin cuối cùng của Frame
+					if rtpPacket.marker() == 1:
 							
-							# 1. Cập nhật Frame Number
-							self.frameNbr = currFrameNbr
+						# 1. Cập nhật Frame Number
+						self.frameNbr = currFrameNbr
 							
-							# 2. Ghi Frame hoàn chỉnh và Hiển thị
-							# self.frameBuffer chứa Frame JPEG hoàn chỉnh đã được ghép nối
-							self.updateMovie(self.writeFrame(self.frameBuffer))
+						# 2. Ghi Frame hoàn chỉnh và Hiển thị
+						# self.frameBuffer chứa Frame JPEG hoàn chỉnh đã được ghép nối
+						self.updateMovie(self.writeFrame(self.frameBuffer))
 							
-							# 3. Reset buffer cho Frame tiếp theo
-							self.frameBuffer = b''
-							
+						# 3. Reset buffer cho Frame tiếp theo
+						self.frameBuffer = b''
+								
 			except:
-				# Xử lý các lỗi socket (bao gồm timeout)
-				if self.playEvent and self.playEvent.isSet(): 
-					break
 				
 				if self.teardownAcked == 1:
 					if self.rtpSocket:
@@ -151,7 +150,6 @@ class Client:
 					break
 				
 				# Xử lý timeout, không cần in lỗi nếu đây chỉ là hết thời gian chờ
-				# print(f"RTP Socket Timeout/Error: {sys.exc_info()[0]}")
 					
 	def writeFrame(self, data):
 		"""Write the received frame to a temp image file. Return the image file."""
@@ -329,21 +327,22 @@ class Client:
 
 				if status_code == 200: 
 					if self.requestSent == self.SETUP:
-						#-------------
-						# TO COMPLETE
-						#-------------
+						
 						# Update RTSP state.
 						self.state = self.READY
 						
 						# Open RTP port.
 						self.openRtpPort() 
+						# tạo event & thread listenRtp 1 lần duy nhất   
+						threading.Thread(
+							target=self.listenRtp,
+							daemon=True
+						).start()
 					elif self.requestSent == self.PLAY:
 						self.state = self.PLAYING
 					elif self.requestSent == self.PAUSE:
 						self.state = self.READY
 						
-						# The play thread exits. A new thread is created on resume.
-						self.playEvent.set()
 					elif self.requestSent == self.TEARDOWN:
 						self.state = self.INIT
 						
