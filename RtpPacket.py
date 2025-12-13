@@ -58,6 +58,11 @@ class RtpPacket:
 		pt = self.header[1] & 127
 		return int(pt)
 	
+	def marker(self):
+		"""Return marker bit."""
+		marker = (self.header[1] >> 7) & 1
+		return int(marker)
+	
 	def getPayload(self):
 		"""Return payload."""
 		return self.payload
