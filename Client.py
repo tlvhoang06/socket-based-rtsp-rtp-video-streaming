@@ -8,9 +8,6 @@ from RtpPacket import RtpPacket
 CACHE_FILE_NAME = "cache-"
 CACHE_FILE_EXT = ".jpg"
 
-# Kích thước cố định cho hiển thị (HD: 1280x720)
-IMAGE_WIDTH = 1280
-IMAGE_HEIGHT = 720
 
 class Client:
 	INIT = 0
@@ -52,30 +49,35 @@ class Client:
 		self.setup = Button(self.master, width=20, padx=3, pady=3)
 		self.setup["text"] = "Setup"
 		self.setup["command"] = self.setupMovie
-		self.setup.grid(row=1, column=0, padx=2, pady=2)
+		self.setup.grid(row=1, column=0, padx=2, pady=2, sticky="s")
 		
 		# Create Play button 		
 		self.start = Button(self.master, width=20, padx=3, pady=3)
 		self.start["text"] = "Play"
 		self.start["command"] = self.playMovie
-		self.start.grid(row=1, column=1, padx=2, pady=2)
+		self.start.grid(row=1, column=1, padx=2, pady=2, sticky="s")
 		
 		# Create Pause button 			
 		self.pause = Button(self.master, width=20, padx=3, pady=3)
 		self.pause["text"] = "Pause"
 		self.pause["command"] = self.pauseMovie
-		self.pause.grid(row=1, column=2, padx=2, pady=2)
+		self.pause.grid(row=1, column=2, padx=2, pady=2, sticky="s")
 		
 		# Create Teardown button
 		self.teardown = Button(self.master, width=20, padx=3, pady=3)
 		self.teardown["text"] = "Teardown"
 		self.teardown["command"] = 	self.exitClient
-		self.teardown.grid(row=1, column=3, padx=2, pady=2)
+		self.teardown.grid(row=1, column=3, padx=2, pady=2, sticky="s")
 		
+		#Column configure
+		for i in range(4):
+			self.master.grid_columnconfigure(i, weight=1)
+		self.master.grid_rowconfigure(0, weight=1)
+		self.master.grid_rowconfigure(1, weight=0)
+
 		# Create a label to display the movie
-		# Sửa lỗi: Cấu hình kích thước label cố định cho hiển thị HD
-		self.label = Label(self.master, height=int(IMAGE_HEIGHT / 20), width=int(IMAGE_WIDTH / 20)) # Kích thước tạm thời
-		self.label.grid(row=0, column=0, columnspan=4, sticky=W+E+N+S, padx=5, pady=5) 
+		self.label = Label(self.master, bg="black")
+		self.label.grid(row=0, column=0, columnspan=4, padx=5, pady=5, sticky="nsew")
 	
 	def setupMovie(self):
 		"""Setup button handler."""
@@ -136,7 +138,7 @@ class Client:
 							
 						# 2. Ghi Frame hoàn chỉnh và Hiển thị
 						# self.frameBuffer chứa Frame JPEG hoàn chỉnh đã được ghép nối
-						self.updateMovie(self.writeFrame(self.frameBuffer))
+						self.master.after(0, self.updateMovie, self.writeFrame(self.frameBuffer))
 							
 						# 3. Reset buffer cho Frame tiếp theo
 						self.frameBuffer = b''
@@ -162,27 +164,15 @@ class Client:
 	
 	def updateMovie(self, imageFile):
 		"""Update the image file as video frame in the GUI."""
-		# Bổ sung xử lý lỗi nếu file cache bị ghi lỗi (payload bị hỏng)
+		#Thay đổi kích thước khung theo file video
 		try:
 			img = Image.open(imageFile)
-		except Exception as e:
-			# print(f"Error opening image file: {e}")
+		except:
 			return
-			
-		# Resize và căn giữa ảnh (Đã sửa để dùng hằng số)
-		img.thumbnail((IMAGE_WIDTH, IMAGE_HEIGHT), Image.Resampling.LANCZOS)
-		
-		# Tạo ảnh nền cố định (1280x720)
-		display_size = (IMAGE_WIDTH, IMAGE_HEIGHT)
-		centered_img = Image.new('RGB', display_size, color='black') # Dùng nền đen
-		
-		# Tính toán vị trí để căn giữa
-		paste_x = (display_size[0] - img.width) // 2
-		paste_y = (display_size[1] - img.height) // 2
-		centered_img.paste(img, (paste_x, paste_y))
-		
-		photo = ImageTk.PhotoImage(centered_img)
-		self.label.configure(image = photo, width=IMAGE_WIDTH, height=IMAGE_HEIGHT) 
+
+		self.master.minsize(img.width, img.height + 50)
+		photo = ImageTk.PhotoImage(img)
+		self.label.configure(image=photo)
 		self.label.image = photo
 		
 	def connectToServer(self):
