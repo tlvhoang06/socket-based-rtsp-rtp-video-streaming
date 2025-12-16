@@ -170,7 +170,7 @@ class Client:
 		except:
 			return
 
-		self.master.minsize(img.width, img.height + 50)
+		self.master.geometry(f"{img.width}x{img.height + 50}")
 		photo = ImageTk.PhotoImage(img)
 		self.label.configure(image=photo)
 		self.label.image = photo
