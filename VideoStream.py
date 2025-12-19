@@ -8,28 +8,24 @@ class VideoStream:
 		self.frameNum = 0
 		self.currentPos = 0
 		
-		# Detect file format
-		self.isRawMjpeg = self.detectFormat()
+		# Bổ sung tự động phát hiện format
+		self.buffer = b''
+		current_pos = self.file.tell()
+		first_byte = self.file.read(1)
+		self.file.seek(current_pos)
 		
-	def detectFormat(self):
-		"""Detect if file is raw MJPEG stream or has length headers."""
-		self.file.seek(0)
-		header = self.file.read(5)
-		self.file.seek(0)
-		
-		# Check if starts with JPEG magic bytes (FF D8)
-		if len(header) >= 2 and header[0] == 0xFF and header[1] == 0xD8:
-			return True  # Raw MJPEG
-		
-		# Otherwise assume it has length headers
-		return False
+		# Nếu byte đầu là số
+		if first_byte and first_byte.isdigit():
+			self.mode = 'custom'  # Định dạng cũ: 5 byte độ dài + frame
+		else:
+			self.mode = 'standard'  # Định dạng MJPEG chuẩn (các file JPEG nối tiếp)
 		
 	def nextFrame(self):
 		"""Get next frame."""
-		if self.isRawMjpeg:
-			return self.nextFrameRawMjpeg()
-		else:
+		if self.mode == 'custom':
 			return self.nextFrameWithLength()
+		else:
+			return self.nextFrameRawMjpeg()
 	
 	def nextFrameWithLength(self):
 		"""Get next frame with 5-byte length header format."""
@@ -41,60 +37,55 @@ class VideoStream:
 			self.frameNum += 1
 		return data
 	
+	# Đọc liên tục file vào buffer cho đến khi tìm thấy một khung hình JPEG trọn vẹn
 	def nextFrameRawMjpeg(self):
 		"""Get next frame from raw MJPEG stream (JPEG frames back-to-back)."""
-		# Find JPEG start marker (FF D8 FF)
-		self.file.seek(self.currentPos)
-		
-		# Scan for JPEG start marker
 		while True:
-			byte = self.file.read(1)
-			if not byte:
-				# End of file
-				return b''
-			
-			if byte == b'\xff':
-				next_byte = self.file.read(1)
-				if not next_byte:
-					return b''
-				
-				if next_byte == b'\xd8':
-					# Found JPEG start (FF D8)
-					# Go back 2 bytes to include FF D8
-					self.file.seek(self.currentPos)
-					frame_start = self.currentPos
+				start_idx = self.buffer.find(b'\xff\xd8')
+				end_idx = self.buffer.find(b'\xff\xd9', start_idx)
+				if start_idx != -1 and end_idx != -1:
+					frame = self.buffer[start_idx: end_idx + 2]
+					self.buffer = self.buffer[end_idx + 2:]
+
+					self.frameNum += 1
+					return frame
+
+				# Nếu chưa đủ dữ liệu, đọc thêm từ file (đọc chunk 4KB hoặc 40KB)
+				chunk = self.file.read(40960)
+				if not chunk:
+					return None
+
+				self.buffer += chunk
 					
-					# Now find JPEG end marker (FF D9)
-					found_end = False
-					while True:
-						byte = self.file.read(1)
-						if not byte:
-							break
-						
-						if byte == b'\xff':
-							next_byte = self.file.read(1)
-							if not next_byte:
-								break
-							if next_byte == b'\xd9':
-								# Found JPEG end (FF D9)
-								frame_end = self.file.tell()
-								self.currentPos = frame_end
-								found_end = True
-								break
-					
-					if found_end:
-						# Read the complete JPEG frame
-						self.file.seek(frame_start)
-						frame_data = self.file.read(frame_end - frame_start)
-						self.frameNum += 1
-						return frame_data
-					else:
-						# No end marker found, read till EOF
-						self.file.seek(frame_start)
-						frame_data = self.file.read()
-						self.frameNum += 1
-						return frame_data
+	def countFrames(self):
+		"""Count total frames in the video file."""
+		# Lưu vị trí hiện tại
+		current_pos = self.file.tell()
+		self.file.seek(0)
 		
+		count = 0
+		if self.isRawMjpeg:
+			# Cách đếm cho Raw MJPEG: Đếm số lượng FF D8
+			content = self.file.read()
+			count = content.count(b'\xff\xd8')
+		else:
+			# Cách đếm cho Custom Format (Length Header)
+			while True:
+				data = self.file.read(5)
+				if data:
+					try:
+						framelength = int(data)
+						self.file.seek(framelength, 1) # Nhảy cóc qua frame data
+						count += 1
+					except ValueError:
+						break
+				else:
+					break
+		
+		# Trả về vị trí cũ để không ảnh hưởng luồng phát
+		self.file.seek(current_pos)
+		return count	
+	
 	def frameNbr(self):
 		"""Get frame number."""
 		return self.frameNum

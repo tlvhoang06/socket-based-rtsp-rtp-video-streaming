@@ -39,8 +39,6 @@ class Client:
         self.sessionId = 0
         self.requestSent = -1
         self.teardownAcked = 0
-        
-        # --- FIX 1: Kết nối và GIỮ socket (không gán None) ---
         self.connectToServer() 
         self.rtpSocket = None
         self.current_photo = None
@@ -53,11 +51,10 @@ class Client:
         # Hàng đợi chứa các frame ảnh hoàn chỉnh
         self.frameBuffer = queue.Queue(maxsize=1000) 
         # Số lượng frame cần nạp trước khi bắt đầu chiếu (Pre-buffering)
-        self.bufferThreshold = 20 
+        self.bufferThreshold = 40 
         self.isPlayingBuffer = False
         
         self.totalFrames = 0
-        self.fps_count = 0
         
         self.createWidgets()
 
@@ -91,12 +88,80 @@ class Client:
         self.label = Label(self.master, height=19)
         self.label.grid(row=0, column=0, columnspan=4, sticky=W+E+N+S, padx=5, pady=5)
 
-        # --- FIX 2: Thêm Label Quality và Status Buffer ---
-        self.label_info = Label(self.master, text="State: INIT", anchor=W)
-        self.label_info.grid(row=2, column=0, columnspan=2, sticky="ew")
-        
-        self.label_quality = Label(self.master, text="Quality: Unknown", anchor=E)
-        self.label_quality.grid(row=2, column=2, columnspan=2, sticky="ew")
+        # Label hiển thị thời gian: 00:00 / 00:00
+        self.labelTime = Label(self.master, text="00:00 / 00:00", font=("Helvetica", 10, "bold"))
+        self.labelTime.grid(row=2, column=0, padx=5, sticky=W)
+
+        # Sử dụng Canvas để vẽ progress bar
+        # Thanh timeline (Thanh xám nhạt)
+        self.timelineWidth = 380
+        self.timeline = Canvas(self.master, width=self.timelineWidth, height=15, bg='#caf0f8', highlightthickness=0)
+        self.timeline.grid(row=2, column=0, columnspan=4, pady=5)
+        # Thanh buffer (Màu xám đậm)
+        self.rect_buffer = self.timeline.create_rectangle(0, 0, 0, 15, fill="#90e0ef", width=0)
+        # Thanh play (Màu đỏ)
+        self.rect_play = self.timeline.create_rectangle(0, 0, 0, 15, fill="#0077b6", width=0)
+
+        # Thêm khung hiển thị thông số mạng
+        stats_frame = LabelFrame(self.master, text="Network Statistics", padx=10, pady=5)
+        stats_frame.grid(row=3, column=0, columnspan=4, sticky=W + E, padx=5, pady=5)
+
+        # Hiển thị Số Frame trong buffer
+        self.label_buffer = Label(stats_frame, text="Buffer: 0 frames", width=20, anchor=W)
+        self.label_buffer.grid(row=1, column=0, sticky=W)
+
+        # Hiển thị chất lượng video
+        self.label_quality = Label(stats_frame, text="Quality: HIGH (HD)", width=20, anchor=W)
+        self.label_quality.grid(row=0, column=3, sticky=W)
+    
+    # Hàm chuyển đổi frame thành thời gian
+    def convertTime(self, frame_count):
+        """Chuyển đổi số frame thành định dạng MM:SS dựa trên FPS."""
+        FPS = 20.0  # Tương ứng với time.sleep(0.05)
+
+        total_seconds = frame_count / FPS
+        minutes = int(total_seconds // 60)
+        seconds = int(total_seconds % 60)
+        return f"{minutes:02d}:{seconds:02d}"
+    # Hàm cập nhật thanh thông số
+    def updateProgressBar(self):
+        if self.totalFrames == 0:
+            return
+
+        current_time_str = self.convertTime(self.frameNbr)
+        total_time_str = self.convertTime(self.totalFrames)
+
+        self.labelTime.config(text=f"{current_time_str} / {total_time_str}")
+
+
+        # Lấy chiều rộng thực tế của thanh Canvas trên màn hình
+        w = self.timeline.winfo_width()
+        # Phòng trường hợp chưa kịp hiển thị thì w=1, ta dùng mặc định 380
+        if w < 50:
+            w = self.timelineWidth
+        # 1. Tính toán độ dài thanh play (Đang phát)
+        ratio_play = self.frameNbr / self.totalFrames
+        width_play = int(w * ratio_play)
+
+        # 2. Tính toán độ dài thanh buffer (Đã tải vào buffer)
+        current_buffered = self.frameNbr + self.frameBuffer.qsize()
+        ratio_buffer = current_buffered / self.totalFrames
+        width_buffer = int(w * ratio_buffer)
+
+        # Chặn không cho vẽ tràn ra ngoài canvas (nếu buffer > 100%)
+        width_play = min(width_play, w)
+        width_buffer = min(width_buffer, w)
+
+        try:
+            # 3. Vẽ lại (Update toạ độ x2 của hình chữ nhật)
+            self.timeline.coords(self.rect_buffer, 0, 0, width_buffer, 15)
+            self.timeline.coords(self.rect_play, 0, 0, width_play, 15)
+        except:
+            pass
+        try:
+            self.label_buffer.config(text=f"Buffer: {self.frameBuffer.qsize()} frames")
+        except:
+            pass
 
     def update_gui_safe(self):
         """Cập nhật giao diện trong luồng chính của Tkinter"""
@@ -106,7 +171,7 @@ class Client:
             self.label.image = self.current_photo
 
         # Cập nhật Progress Bar và Thời gian
-        #self.updateProgressBar()
+        self.updateProgressBar()
     
     def setupMovie(self):
         """Setup button handler."""
@@ -115,11 +180,11 @@ class Client:
     
     def exitClient(self):
         """Teardown button handler."""
-        self.sendRtspRequest(self.TEARDOWN)        
-        self.master.destroy() 
+        self.sendRtspRequest(self.TEARDOWN)		
+        self.master.destroy() # Close the gui window
         try:
-            os.remove(CACHE_FILE_NAME + str(self.sessionId) + CACHE_FILE_EXT)
-        except:
+            os.remove(CACHE_FILE_NAME + str(self.sessionId) + CACHE_FILE_EXT) # Delete the cache image from video
+        except OSError:
             pass
 
     def pauseMovie(self):
@@ -130,16 +195,24 @@ class Client:
     def playMovie(self):
         """Play button handler."""
         if self.state == self.READY:
-            # Khi bấm Play, ta bắt đầu luồng chạy Buffer (Consumer)
-            if not self.isPlayingBuffer:
-                self.isPlayingBuffer = True
-                threading.Thread(target=self.runCache, daemon=True).start()
-            
+            # Create a new thread to listen for RTP packets
+            # Chỉ tạo luồng mới nếu chưa có luồng nào đang chạy
+            if self.isListening == False:
+                threading.Thread(target=self.listenRtp).start()
+                self.isListening = True
+            self.playEvent = threading.Event()
+            self.playEvent.clear()
             self.sendRtspRequest(self.PLAY)
+        if not self.isPlayingBuffer:
+            self.isPlayingBuffer = True
+            threading.Thread(target=self.runCache).start()
     
     # --- PHẦN 1: PRODUCER (Nhận gói tin -> Đẩy vào Queue) ---
     def listenRtp(self):        
         """Listen for RTP packets."""
+
+        self.dataBuffer = b"" # Đảm bảo buffer rỗng khi bắt đầu
+        prev_seq_num = -1 # Biến theo dõi gói tin trước đó
         while True:
             try:
                 data = self.rtpSocket.recv(65536)
@@ -148,17 +221,24 @@ class Client:
                 rtpPacket = RtpPacket()
                 rtpPacket.decode(data)
                 
-                currFrameNbr = rtpPacket.seqNum()
+                curr_seq_num = rtpPacket.seqNum()
                 
+                # Logic chống xước phim (mất gói)
+                if prev_seq_num != -1 and curr_seq_num != (prev_seq_num + 1):
+                    self.dataBuffer = b""
+                
+                # Cập nhật số thứ tự gói tin
+                prev_seq_num = curr_seq_num
                 # Logic ghép gói tin
                 self.dataBuffer += rtpPacket.getPayload()
                 
                 # Kiểm tra Marker bit = 1 (Gói cuối cùng của frame)
                 if rtpPacket.marker() == 1:
                     # Thay vì hiển thị ngay, ta ĐẨY VÀO BUFFER (QUEUE)
-                    if self.frameBuffer.full() == False:
-                        # Lưu dữ liệu ảnh vào queue
-                        self.frameBuffer.put(self.dataBuffer)
+                    if len(self.dataBuffer) > 0:
+                        if self.frameBuffer.full() == False:
+                            # Lưu dữ liệu vào queue
+                            self.frameBuffer.put(self.dataBuffer)
                     
                     # Reset buffer tạm
                     self.dataBuffer = b''
@@ -192,7 +272,7 @@ class Client:
 
                     # Lấy frame và chiếu
                     image_data = self.frameBuffer.get()
-                    print(f"-> [Play] Lấy frame. Còn lại: {self.frameBuffer.qsize()} frame")
+                    print(f"[Play] Lấy frame. Còn lại: {self.frameBuffer.qsize()} frame")
                     self.frameNbr += 1
 
                     start_process_time = time.time()
@@ -210,17 +290,17 @@ class Client:
                     # 1. KIỂM TRA ĐÃ HẾT VIDEO CHƯA (Ưu tiên số 1)
                     # Nếu số frame đã chiếu >= Tổng số frame của video
                     if self.totalFrames > 0 and self.frameNbr >= self.totalFrames:
-                        print("Video finished.")  # <--- In đúng dòng bạn cần
+                        print("Video kết thúc.")  # <--- In đúng dòng bạn cần
                         self.isListening = False  # Dừng luồng nghe
                         break  # Thoát vòng lặp
 
                     # 2. XỬ LÝ KHI CHƯA HẾT MÀ BỊ RỖNG (Do mạng lag)
                     if self.isListening:
                         stuck_counter += 1
-                        print(f"Buffer cạn... (Chờ lần {stuck_counter})")
+                        print(f"Buffer đã hết... (Chờ lần {stuck_counter})")
                         time.sleep(0.1)
 
-                        # Timeout sau 3 giây chờ đợi
+                        # Timeout sau 6 giây chờ đợi
                         if stuck_counter > 30:
                             print("Time out! Kết thúc video sớm.")
                             self.isListening = False
@@ -266,7 +346,6 @@ class Client:
             self.rtspSocket.connect((self.serverAddr, self.serverPort))
         except:
             tkinter.messagebox.showwarning('Connection Failed', 'Connection to \'%s\' failed.' %self.serverAddr)
-            sys.exit(0)
     
     def sendRtspRequest(self, requestCode):
         """Send RTSP request to the server."""  
@@ -312,43 +391,70 @@ class Client:
                 break
     
     def parseRtspReply(self, data):
+        """Parse the RTSP reply from the server."""
         lines = data.split('\n')
-        if len(lines) < 3: return
         seqNum = int(lines[1].split(' ')[1])
         
+        # Process only if the server reply's sequence number is the same as the request's
         if seqNum == self.rtspSeq:
             session = int(lines[2].split(' ')[1])
+            # New RTSP session ID
             if self.sessionId == 0:
                 self.sessionId = session
             
+            # Process only if the session ID is the same
             if self.sessionId == session:
                 if int(lines[0].split(' ')[1]) == 200: 
                     if self.requestSent == self.SETUP:
+                        # Update RTSP state.
                         self.state = self.READY
+                        
+                        # Lấy totalFrames
+                        for line in lines:
+                            if "Total-Frames" in line:
+                                try:
+                                    self.totalFrames = int(line.split(':')[1])
+                                    print(f"Total frames: {self.totalFrames}")
+                                except:
+                                    self.totalFrames = 0
+
+                        # Open RTP port.
                         self.openRtpPort() 
                     elif self.requestSent == self.PLAY:
                         self.state = self.PLAYING
                     elif self.requestSent == self.PAUSE:
                         self.state = self.READY
+                        
+                        # The play thread exits. A new thread is created on resume.
+                        self.playEvent.set()
                     elif self.requestSent == self.TEARDOWN:
                         self.state = self.INIT
+                        
+                        # Flag the teardownAcked to close the socket.
                         self.teardownAcked = 1 
+	
 
     def openRtpPort(self):
         """Open RTP socket binded to a specified port."""
+        # Create a new datagram socket to receive RTP packets from the server
         self.rtpSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+        # [QUAN TRỌNG] Tăng kích thước bộ đệm nhận lên 5MB
+        # Giúp OS giữ lại gói tin khi Python xử lý không kịp -> Chống lag/mất gói
+        self.rtpSocket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 5 * 1024 * 1024)
+        # Set the timeout value of the socket to 0.5sec
         self.rtpSocket.settimeout(0.5)
-        # Tăng buffer nhận của Socket lên để tránh rớt gói UDP
-        self.rtpSocket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024*1024) 
+
         try:
-            self.rtpSocket.bind(('', self.rtpPort))
-            threading.Thread(target=self.listenRtp, daemon=True).start()
+            # Bind the socket to the address using the RTP port given by the client user
+            self.rtpSocket.bind(("", self.rtpPort))
         except:
-            tkinter.messagebox.messagebox.showwarning('Unable to Bind', 'Unable to bind PORT=%d' %self.rtpPort)
+            tkinter.messagebox.showwarning('Unable to Bind', 'Unable to bind PORT=%d' %self.rtpPort)
 
     def handler(self):
+        """Handler on explicitly closing the GUI window."""
         self.pauseMovie()
-        if tkinter.messagebox.messagebox.askokcancel("Quit?", "Are you sure you want to quit?"):
+        if tkinter.messagebox.askokcancel("Quit?", "Are you sure you want to quit?"):
             self.exitClient()
-        else:
+        else: # When the user presses cancel, resume playing.
             self.playMovie()
