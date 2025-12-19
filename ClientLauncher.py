@@ -15,8 +15,4 @@ if __name__ == "__main__":
     root = Tk()
     app = Client(root, serverAddr, serverPort, rtpPort, fileName)
     app.master.title("RTPClient")
-    root.geometry("1280x760+100+100")
-    root.attributes("-topmost", True)
-    root.after(1000, lambda: root.attributes("-topmost", False))
-    print(f"[GUI] Client window opened - Server: {serverAddr}:{serverPort}, RTP Port: {rtpPort}, Video: {fileName}")
     root.mainloop()
