@@ -14,16 +14,22 @@ class RtpPacket:
 		header = bytearray(HEADER_SIZE)
 	
 		# Fill the header bytearray with RTP header fields
+		# Byte 0
 		header[0] = (version << 6) | (padding << 5) | (extension << 4) | cc
+		# Byte 1
 		header[1] = (marker << 7) | pt
+
+		# Sequence number (2 bytes)
 		header[2] = (seqnum >> 8) & 0xFF
 		header[3] = seqnum & 0xFF
 
+		# Timestamp (4 bytes)
 		header[4] = (timestamp >> 24) & 0xFF
 		header[5] = (timestamp >> 16) & 0xFF
 		header[6] = (timestamp >> 8) & 0xFF
 		header[7] = timestamp & 0xFF
 
+		# SSRC (4 bytes)
 		header[8]  = (ssrc >> 24) & 0xFF
 		header[9]  = (ssrc >> 16) & 0xFF
 		header[10] = (ssrc >> 8) & 0xFF
