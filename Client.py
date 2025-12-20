@@ -94,7 +94,7 @@ class Client:
 
         # Sử dụng Canvas để vẽ progress bar
         # Thanh timeline (Thanh xám nhạt)
-        self.timelineWidth = 380
+        self.timelineWidth = 450
         self.timeline = Canvas(self.master, width=self.timelineWidth, height=15, bg='#caf0f8', highlightthickness=0)
         self.timeline.grid(row=2, column=0, columnspan=4, pady=5)
         # Thanh buffer (Màu xám đậm)
@@ -113,7 +113,7 @@ class Client:
         self.label_buffer.grid(row=0, column=0, sticky=W)
 
         # Hiển thị chất lượng video
-        self.label_quality = Label(stats_frame, text="Quality: HIGH (HD)", width=20, anchor=W)
+        self.label_quality = Label(stats_frame, text="Quality: N/A", width=20, anchor=W)
         self.label_quality.grid(row=0, column=4, sticky=W)
     
     # Hàm chuyển đổi frame thành thời gian
@@ -163,7 +163,30 @@ class Client:
         except:
             pass
         try:
-            self.label_buffer.config(text=f"Buffer: {self.frameBuffer.qsize()} frames")
+            current_sz = self.frameBuffer.qsize()
+            target_sz = self.bufferThreshold
+            remaining_frames = self.totalFrames - self.frameNbr
+
+            # Các frame trong buffer là các frame cuối cùng của video
+            if  remaining_frames < target_sz:
+                 self.label_buffer.config(
+                    text=f"Remaining Buffer: {remaining_frames} frames", 
+                    fg="#0066FF",
+                    font=("Helvetica", 9, "bold")
+                )
+            # Nếu buffer ít hơn ngưỡng quy định (đang nạp hoặc mạng yếu)
+            elif current_sz < target_sz:
+                self.label_buffer.config(
+                    text=f"Buffer: {current_sz}/{target_sz}", 
+                    fg="#FF0000", 
+                    font=("Helvetica", 9, "bold")
+                )
+            else:
+                self.label_buffer.config(
+                    text=f"Buffer {current_sz} frames", 
+                    fg="#36F04E",
+                    font=("Helvetica", 9, "bold")
+                )
         except:
             pass
 
@@ -260,6 +283,7 @@ class Client:
         # Nạp buffer ban đầu
         print(f"Đang nạp buffer... Cần {self.bufferThreshold} frame.")
         while self.frameBuffer.qsize() < self.bufferThreshold and self.state != self.TEARDOWN:
+            self.master.after(0, self.updateProgressBar) # Cập nhật hiển thị buffer khi nạp
             time.sleep(0.1)
         print("Đã nạp đủ! Bắt đầu chiếu.")
 
