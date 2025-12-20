@@ -51,7 +51,7 @@ class Client:
         # Hàng đợi chứa các frame ảnh hoàn chỉnh
         self.frameBuffer = queue.Queue(maxsize=1000) 
         # Số lượng frame cần nạp trước khi bắt đầu chiếu (Pre-buffering)
-        self.bufferThreshold = 40 
+        self.bufferThreshold = 60 
         self.isPlayingBuffer = False
         
         self.totalFrames = 0
@@ -106,13 +106,15 @@ class Client:
         stats_frame = LabelFrame(self.master, text="Network Statistics", padx=10, pady=5)
         stats_frame.grid(row=3, column=0, columnspan=4, sticky=W + E, padx=5, pady=5)
 
+        stats_frame.columnconfigure(1, weight=1) # Để tạo ra khoảng trống ở giữa
+        
         # Hiển thị Số Frame trong buffer
         self.label_buffer = Label(stats_frame, text="Buffer: 0 frames", width=20, anchor=W)
-        self.label_buffer.grid(row=1, column=0, sticky=W)
+        self.label_buffer.grid(row=0, column=0, sticky=W)
 
         # Hiển thị chất lượng video
         self.label_quality = Label(stats_frame, text="Quality: HIGH (HD)", width=20, anchor=W)
-        self.label_quality.grid(row=0, column=3, sticky=W)
+        self.label_quality.grid(row=0, column=4, sticky=W)
     
     # Hàm chuyển đổi frame thành thời gian
     def convertTime(self, frame_count):
@@ -123,8 +125,10 @@ class Client:
         minutes = int(total_seconds // 60)
         seconds = int(total_seconds % 60)
         return f"{minutes:02d}:{seconds:02d}"
+    
     # Hàm cập nhật thanh thông số
     def updateProgressBar(self):
+        """Cập nhật giao diện Progress Bar"""
         if self.totalFrames == 0:
             return
 
@@ -272,7 +276,7 @@ class Client:
 
                     # Lấy frame và chiếu
                     image_data = self.frameBuffer.get()
-                    print(f"[Play] Lấy frame. Còn lại: {self.frameBuffer.qsize()} frame")
+                    print(f"Lấy frame. Trong buffer còn lại: {self.frameBuffer.qsize()} frame")
                     self.frameNbr += 1
 
                     start_process_time = time.time()

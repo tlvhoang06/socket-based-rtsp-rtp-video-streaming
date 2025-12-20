@@ -61,15 +61,20 @@ class ServerWorker:
 				try:
 					self.clientInfo['videoStream'] = VideoStream(filename)
 					self.state = self.READY
+					# Thêm dòng đếm tổng frame cho thanh nền của progress bar
+					total_frames = self.clientInfo['videoStream'].countFrames()
 				except IOError:
 					self.replyRtsp(self.FILE_NOT_FOUND_404, seq[1])
 				
 				# Generate a randomized RTSP session ID
 				self.clientInfo['session'] = randint(100000, 999999)
-				
+
+				# Tạo dữ liệu phụ
+				extra_header = 'Total-Frames: ' + str(total_frames)
+
 				# Send RTSP reply
-				self.replyRtsp(self.OK_200, seq[1])
-				
+				self.replyRtsp(self.OK_200, seq[1], extra_header)
+
 				# Get the RTP/UDP port from the last line
 				self.clientInfo['rtpPort'] = request[2].split('=')[1]
 		
@@ -170,11 +175,13 @@ class ServerWorker:
 		
 		return rtpPacket.getPacket()
 		
-	def replyRtsp(self, code, seq):
+	def replyRtsp(self, code, seq, extra_data = None): # Thêm 1 parameter (để truyền vào total frames)
 		"""Send RTSP reply to the client."""
 		if code == self.OK_200:
 			#print("200 OK")
 			reply = 'RTSP/1.0 200 OK\nCSeq: ' + seq + '\nSession: ' + str(self.clientInfo['session'])
+			if extra_data: # Nếu có dữ liệu
+				reply += '\n' + extra_data
 			connSocket = self.clientInfo['rtspSocket'][0]
 			connSocket.send(reply.encode())
 		

@@ -61,14 +61,10 @@ class VideoStream:
 		"""Count total frames in the video file."""
 		# Lưu vị trí hiện tại
 		current_pos = self.file.tell()
-		self.file.seek(0)
-		
+		self.file.seek(0)	
 		count = 0
-		if self.isRawMjpeg:
-			# Cách đếm cho Raw MJPEG: Đếm số lượng FF D8
-			content = self.file.read()
-			count = content.count(b'\xff\xd8')
-		else:
+
+		if self.mode == 'custom':
 			# Cách đếm cho Custom Format (Length Header)
 			while True:
 				data = self.file.read(5)
@@ -81,7 +77,12 @@ class VideoStream:
 						break
 				else:
 					break
-		
+		else:
+			# Cách đếm cho Raw MJPEG: Đếm số lượng FF D8
+			# Cách đếm cho Raw MJPEG: Đếm số lượng FF D8
+			content = self.file.read()
+			count = content.count(b'\xff\xd8')
+			
 		# Trả về vị trí cũ để không ảnh hưởng luồng phát
 		self.file.seek(current_pos)
 		return count	
