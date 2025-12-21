@@ -78,11 +78,21 @@ class VideoStream:
 				else:
 					break
 		else:
-			# Cách đếm cho Raw MJPEG: Đếm số lượng FF D8
-			# Cách đếm cho Raw MJPEG: Đếm số lượng FF D8
+			# Video độ phân giải cao (FHD) thường chứa các ảnh JPEG có kèm Thumbnail (ảnh nhỏ) hoặc metadata (Exif) bên trong.
+			# Sửa thành Logic "tìm cặp mở-đóng" (Start-End) để loại bỏ rác/thumbnail.
 			content = self.file.read()
-			count = content.count(b'\xff\xd8')
-			
+			pos = 0
+			while True:
+				start_idx = content.find(b'\xff\xd8', pos)
+				if start_idx == -1:
+					break
+
+				end_idx = content.find(b'\xff\xd9', start_idx)
+				if end_idx == -1:
+					break
+
+				count += 1
+				pos = end_idx + 2
 		# Trả về vị trí cũ để không ảnh hưởng luồng phát
 		self.file.seek(current_pos)
 		return count	
