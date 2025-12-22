@@ -363,7 +363,7 @@ class Client:
             # nhưng với Tkinter đơn giản có thể gán trực tiếp
             self.current_photo = ImageTk.PhotoImage(resized_image)
 
-        except Exception as e:
+        except Exception as e: 
             # print(e)
             pass
         
