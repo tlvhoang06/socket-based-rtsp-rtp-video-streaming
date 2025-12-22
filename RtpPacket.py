@@ -7,7 +7,8 @@ class RtpPacket:
 	
 	def __init__(self):
 		pass
-		
+
+	# Đóng gói RTP	
 	def encode(self, version, padding, extension, cc, seqnum, marker, pt, ssrc, payload):
 		"""Encode the RTP packet with header fields and payload."""
 		timestamp = int(time())
@@ -39,7 +40,8 @@ class RtpPacket:
 		
 		# Get the payload from the argument
 		self.payload = payload
-		
+
+	# Giải mã gói RTP	
 	def decode(self, byteStream):
 		"""Decode the RTP packet."""
 		self.header = bytearray(byteStream[:HEADER_SIZE])
@@ -76,7 +78,3 @@ class RtpPacket:
 	def getPacket(self):
 		"""Return RTP packet."""
 		return self.header + self.payload
-	def getMarker(self):
-		"""Return the Marker bit (M)."""
-		# Marker bit (M) là bit cao nhất (bit 8) của byte thứ 2 (header[1])
-		return self.header[1] >> 7
