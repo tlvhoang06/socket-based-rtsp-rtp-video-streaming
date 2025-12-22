@@ -8,17 +8,17 @@ class VideoStream:
 		self.frameNum = 0
 		self.currentPos = 0
 		
-		# Bổ sung tự động phát hiện format
+		# Tự động phát hiện format file
 		self.buffer = b''
 		current_pos = self.file.tell()
 		first_byte = self.file.read(1)
 		self.file.seek(current_pos)
 		
-		# Nếu byte đầu là số
+		# Nếu byte đầu là ký tự số -> Định dạng cũ (Custom Format với header độ dài 5 byte)
 		if first_byte and first_byte.isdigit():
 			self.mode = 'custom'  # Định dạng cũ: 5 byte độ dài + frame
 		else:
-			self.mode = 'standard'  # Định dạng MJPEG chuẩn (các file JPEG nối tiếp)
+			self.mode = 'standard'  # Định dạng MJPEG chuẩn (các ảnh JPEG nối tiếp nhau)
 		
 	def nextFrame(self):
 		"""Get next frame."""
@@ -41,18 +41,26 @@ class VideoStream:
 	def nextFrameRawMjpeg(self):
 		"""Get next frame from raw MJPEG stream (JPEG frames back-to-back)."""
 		while True:
+				# 0xFFD8 là Start of Image (SOI)
 				start_idx = self.buffer.find(b'\xff\xd8')
+
+				# 0xFFD9 là End of Image (EOI)
 				end_idx = self.buffer.find(b'\xff\xd9', start_idx)
+
 				if start_idx != -1 and end_idx != -1:
+					# Cắt dữ liệu từ SOI đến EOI để được 1 frame hoàn chỉnh
 					frame = self.buffer[start_idx: end_idx + 2]
+
+					# Cập nhật lại buffer: Loại bỏ frame đã lấy, giữ lại phần dư (nếu có)
 					self.buffer = self.buffer[end_idx + 2:]
 
 					self.frameNum += 1
 					return frame
 
-				# Nếu chưa đủ dữ liệu, đọc thêm từ file (đọc chunk 4KB hoặc 40KB)
+				# Nếu chưa tìm thấy đủ cặp SOI/EOI, đọc thêm dữ liệu từ file vào buffer
+				# Đọc theo chunk (40KB) để tối ưu
 				chunk = self.file.read(40960)
-				if not chunk:
+				if not chunk: # Hết File
 					return None
 
 				self.buffer += chunk
@@ -71,15 +79,14 @@ class VideoStream:
 				if data:
 					try:
 						framelength = int(data)
-						self.file.seek(framelength, 1) # Nhảy cóc qua frame data
+						self.file.seek(framelength, 1) # Seek (nhảy) qua phần dữ liệu ảnh để đếm cho nhanh
 						count += 1
 					except ValueError:
 						break
 				else:
 					break
 		else:
-			# Video độ phân giải cao (FHD) thường chứa các ảnh JPEG có kèm Thumbnail (ảnh nhỏ) hoặc metadata (Exif) bên trong.
-			# Sửa thành Logic "tìm cặp mở-đóng" (Start-End) để loại bỏ rác/thumbnail.
+			# Với MJPEG: Quét toàn bộ file để tìm số lượng cặp FFD8...FFD9
 			content = self.file.read()
 			pos = 0
 			while True:

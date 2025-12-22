@@ -1,6 +1,6 @@
 import io
 import queue
-import time  # Cần import time để xử lý độ trễ
+import time  # Để control tốc độ video
 from tkinter import *
 import tkinter.messagebox
 from PIL import Image, ImageTk
@@ -42,11 +42,11 @@ class Client:
         self.connectToServer() 
         self.rtpSocket = None
         self.current_photo = None
-        # Thêm cờ đánh dấu luồng đang chạy
+        # Thêm cờ đánh dấu luồng đang chạy, tránh tạo nhiều luồng
         self.isListening = False
         self.frameNbr = 0
         
-        # --- CACHING SETUP ---
+        #  CACHING SETUP 
         self.dataBuffer = b''
         # Hàng đợi chứa các frame ảnh hoàn chỉnh
         self.frameBuffer = queue.Queue(maxsize=1000) 
@@ -92,14 +92,14 @@ class Client:
         self.labelTime = Label(self.master, text="00:00 / 00:00", font=("Helvetica", 10, "bold"))
         self.labelTime.grid(row=2, column=0, padx=5, sticky=W)
 
-        # Sử dụng Canvas để vẽ progress bar
-        # Thanh timeline (Thanh xám nhạt)
+        # Sử dụng Canvas để vẽ thanh timeline
+        # Thanh timeline (Thanh nhạt)
         self.timelineWidth = 450
         self.timeline = Canvas(self.master, width=self.timelineWidth, height=15, bg='#caf0f8', highlightthickness=0)
         self.timeline.grid(row=2, column=0, columnspan=4, pady=5)
-        # Thanh buffer (Màu xám đậm)
+        # Thanh buffer (Màu đậm hơn - thể hiện đã tải được bao nhiêu)
         self.rect_buffer = self.timeline.create_rectangle(0, 0, 0, 15, fill="#90e0ef", width=0)
-        # Thanh play (Màu đỏ)
+        # Thanh play (Màu đỏ/xanh đậm - thể hiện đang xem tới đâu)
         self.rect_play = self.timeline.create_rectangle(0, 0, 0, 15, fill="#0077b6", width=0)
 
         # Thêm khung hiển thị thông số mạng
@@ -116,7 +116,7 @@ class Client:
         self.label_quality = Label(stats_frame, text="Quality: N/A", width=20, anchor=W)
         self.label_quality.grid(row=0, column=4, sticky=W)
     
-    # Hàm chuyển đổi frame thành thời gian
+    # Hàm chuyển đổi frame thành phút / giây (VD frame 60 -> 00:03)
     def convertTime(self, frame_count):
         """Chuyển đổi số frame thành định dạng MM:SS dựa trên FPS."""
         FPS = 20.0  # Tương ứng với time.sleep(0.05)
@@ -140,14 +140,14 @@ class Client:
 
         # Lấy chiều rộng thực tế của thanh Canvas trên màn hình
         w = self.timeline.winfo_width()
-        # Phòng trường hợp chưa kịp hiển thị thì w=1, ta dùng mặc định 380
+        # Lúc mới chạy chưa hiện hình thì mặc định lấy width 450
         if w < 50:
             w = self.timelineWidth
-        # 1. Tính toán độ dài thanh play (Đang phát)
+        # Tính % thanh play (Đang phát)
         ratio_play = self.frameNbr / self.totalFrames
         width_play = int(w * ratio_play)
 
-        # 2. Tính toán độ dài thanh buffer (Đã tải vào buffer)
+        # Tính % thanh Buffer (Đã tải được tới đâu)
         current_buffered = self.frameNbr + self.frameBuffer.qsize()
         ratio_buffer = current_buffered / self.totalFrames
         width_buffer = int(w * ratio_buffer)
@@ -157,7 +157,7 @@ class Client:
         width_buffer = min(width_buffer, w)
 
         try:
-            # 3. Vẽ lại (Update toạ độ x2 của hình chữ nhật)
+            # Vẽ lại (Update toạ độ x2 của hình chữ nhật)
             self.timeline.coords(self.rect_buffer, 0, 0, width_buffer, 15)
             self.timeline.coords(self.rect_play, 0, 0, width_play, 15)
         except:
@@ -167,14 +167,14 @@ class Client:
             target_sz = self.bufferThreshold
             remaining_frames = self.totalFrames - self.frameNbr
 
-            # Các frame trong buffer là các frame cuối cùng của video
+            # Khi Các frame trong buffer là các frame cuối cùng của video -> màu xanh dương
             if  remaining_frames < target_sz:
                  self.label_buffer.config(
                     text=f"Remaining Buffer: {remaining_frames} frames", 
                     fg="#0066FF",
                     font=("Helvetica", 9, "bold")
                 )
-            # Nếu buffer ít hơn ngưỡng quy định (đang nạp hoặc mạng yếu)
+            # Nếu buffer đang cạn (ít hơn 60) -> Cảnh báo đỏ
             elif current_sz < target_sz:
                 self.label_buffer.config(
                     text=f"Buffer: {current_sz}/{target_sz}", 
@@ -182,6 +182,7 @@ class Client:
                     font=("Helvetica", 9, "bold")
                 )
             else:
+            # Buffer đầy -> Màu xanh lá 
                 self.label_buffer.config(
                     text=f"Buffer {current_sz} frames", 
                     fg="#36F04E",
@@ -234,7 +235,7 @@ class Client:
             self.isPlayingBuffer = True
             threading.Thread(target=self.runCache).start()
     
-    # --- PHẦN 1: PRODUCER (Nhận gói tin -> Đẩy vào Queue) ---
+    # PHẦN 1: PRODUCER (Nhận gói tin -> Đẩy vào Queue) 
     def listenRtp(self):        
         """Listen for RTP packets."""
 
@@ -251,23 +252,27 @@ class Client:
                 curr_seq_num = rtpPacket.seqNum()
                 
                 # Logic chống xước phim (mất gói)
+                # Nếu số thứ tự gói hiện tại không liền kề với gói trước đó (VD: nhận 5 xong nhảy lên 7),
+                # nghĩa là gói 6 đã bị mất trên đường truyền.
+                # --> Hủy bỏ buffer đang lắp ráp dở để tránh hiển thị hình ảnh bị lỗi (glitch).
                 if prev_seq_num != -1 and curr_seq_num != (prev_seq_num + 1):
                     self.dataBuffer = b""
                 
                 # Cập nhật số thứ tự gói tin
                 prev_seq_num = curr_seq_num
-                # Logic ghép gói tin
+                # Nối phần dữ liệu (Payload) vào buffer tạm
                 self.dataBuffer += rtpPacket.getPayload()
                 
-                # Kiểm tra Marker bit = 1 (Gói cuối cùng của frame)
+                # Cơ chế ghép 
+                # Kiểm tra Marker bit trong header RTP.
+                # Marker = 1 báo hiệu đây là gói tin cuối cùng của một Frame ảnh.
                 if rtpPacket.marker() == 1:
                     # Thay vì hiển thị ngay, ta ĐẨY VÀO BUFFER (QUEUE)
-                    if len(self.dataBuffer) > 0:
+                    if len(self.dataBuffer) > 0:    
                         if self.frameBuffer.full() == False:
-                            # Lưu dữ liệu vào queue
                             self.frameBuffer.put(self.dataBuffer)
                     
-                    # Reset buffer tạm
+                    # Reset buffer tạm để chuẩn bị cho frame tiếp theo
                     self.dataBuffer = b''
             except:
                 if self.teardownAcked == 1:
@@ -276,11 +281,12 @@ class Client:
                         self.rtpSocket.close()
                     break
 
-    # --- PHẦN 2: CONSUMER (Lấy từ Queue -> Hiển thị) ---
+    #  PHẦN 2: CONSUMER (Lấy từ Queue -> Hiển thị) 
     def runCache(self):
-        FRAME_TIME = 0.05
+        FRAME_TIME = 0.05 # Thời gian hiển thị mỗi frame (0.05s = 20 FPS)
 
-        # Nạp buffer ban đầu
+        # Giai đoạn Pre-buffering:
+        # Chờ buffer nạp đủ lượng frame tối thiểu (Threshold) mới bắt đầu phát.
         print(f"Đang nạp buffer... Cần {self.bufferThreshold} frame.")
         while self.frameBuffer.qsize() < self.bufferThreshold and self.state != self.TEARDOWN:
             self.master.after(0, self.updateProgressBar) # Cập nhật hiển thị buffer khi nạp
@@ -294,7 +300,7 @@ class Client:
                 break
 
             if self.state == self.PLAYING:
-                # --- TRƯỜNG HỢP 1: CÓ ẢNH ĐỂ CHIẾU ---
+                #  TRƯỜNG HỢP 1: CÓ ẢNH ĐỂ CHIẾU 
                 if not self.frameBuffer.empty():
                     stuck_counter = 0  # Reset đếm kẹt
 
@@ -303,22 +309,24 @@ class Client:
                     print(f"Lấy frame. Trong buffer còn lại: {self.frameBuffer.qsize()} frame")
                     self.frameNbr += 1
 
+                    # Đo thời gian xử lý ảnh để bù trừ độ trễ
                     start_process_time = time.time()
                     self.updateMovie(image_data)
                     self.master.after(0, self.update_gui_safe)
 
-                    # Giữ nhịp FPS
+                    # Đồng bộ thời gian
+                    # Nếu xử lý ảnh quá nhanh, cần ngủ (sleep) một chút để duy trì đúng 20 FPS.
                     process_duration = time.time() - start_process_time
                     time_to_sleep = FRAME_TIME - process_duration
                     if time_to_sleep > 0:
                         time.sleep(time_to_sleep)
 
-                # --- TRƯỜNG HỢP 2: BUFFER RỖNG ---
+                #  TRƯỜNG HỢP 2: BUFFER RỖNG 
                 else:
-                    # 1. KIỂM TRA ĐÃ HẾT VIDEO CHƯA (Ưu tiên số 1)
+                    # 1. KIỂM TRA ĐÃ HẾT VIDEO CHƯA
                     # Nếu số frame đã chiếu >= Tổng số frame của video
                     if self.totalFrames > 0 and self.frameNbr >= self.totalFrames:
-                        print("Video kết thúc.")  # <--- In đúng dòng bạn cần
+                        print("Video kết thúc.")
                         self.isListening = False  # Dừng luồng nghe
                         break  # Thoát vòng lặp
 
@@ -328,7 +336,7 @@ class Client:
                         print(f"Buffer đã hết... (Chờ lần {stuck_counter})")
                         time.sleep(0.1)
 
-                        # Timeout sau 6 giây chờ đợi
+                        # Cơ chế Timeout: Nếu chờ quá lâu (> 3 giây) mà không có dữ liệu -> Ngắt kết nối.
                         if stuck_counter > 30:
                             print("Time out! Kết thúc video sớm.")
                             self.isListening = False
@@ -437,7 +445,7 @@ class Client:
                         # Update RTSP state.
                         self.state = self.READY
                         
-                        # Lấy totalFrames
+                        # Lấy totalFrames từ header mở rộng
                         for line in lines:
                             if "Total-Frames" in line:
                                 try:
@@ -467,9 +475,12 @@ class Client:
         # Create a new datagram socket to receive RTP packets from the server
         self.rtpSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-        # [QUAN TRỌNG] Tăng kích thước bộ đệm nhận lên 5MB
-        # Giúp OS giữ lại gói tin khi Python xử lý không kịp -> Chống lag/mất gói
+        # [QUAN TRỌNG] Tối ưu hóa Socket Buffer:
+        # Tăng kích thước bộ đệm nhận (Receive Buffer) của kernel lên 5MB.
+        # Lý do: Nếu Python xử lý chậm, dữ liệu UDP đến quá nhanh sẽ bị kernel drop (vứt bỏ).
+        # Tăng buffer giúp giảm thiểu hiện tượng mất gói tin (packet loss) ở tầng Transport.
         self.rtpSocket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 5 * 1024 * 1024)
+        
         # Set the timeout value of the socket to 0.5sec
         self.rtpSocket.settimeout(0.5)
 
