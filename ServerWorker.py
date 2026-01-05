@@ -61,7 +61,7 @@ class ServerWorker:
 				try:
 					self.clientInfo['videoStream'] = VideoStream(filename)
 					self.state = self.READY
-					# Đếm tổng frame cho thanh nền của progress bar
+					# Thêm dòng đếm tổng frame cho thanh nền của progress bar
 					total_frames = self.clientInfo['videoStream'].countFrames()
 				except IOError:
 					self.replyRtsp(self.FILE_NOT_FOUND_404, seq[1])
@@ -69,7 +69,7 @@ class ServerWorker:
 				# Generate a randomized RTSP session ID
 				self.clientInfo['session'] = randint(100000, 999999)
 
-				# Gửi kèm thông tin Total-Frames trong header phản hồi
+				# Tạo dữ liệu phụ
 				extra_header = 'Total-Frames: ' + str(total_frames)
 
 				# Send RTSP reply
@@ -84,6 +84,7 @@ class ServerWorker:
 
 			self.state = self.PLAYING
 
+			# Cơ chế đồng bộ giữa các luồng
 			self.clientInfo['event'] = threading.Event()   #Reset event
 			self.clientInfo['event'].clear()
 
@@ -91,8 +92,8 @@ class ServerWorker:
 				self.clientInfo["rtpSocket"] = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) #Create a new socket for RTP/UDP
 
 			self.replyRtsp(self.OK_200, seq[1])
-			
-			# Tạo luồng gửi RTP riêng biệt
+
+			# Tạo luồng song song để gửi RTP liên tục mà không làm treo chương trình
 			self.clientInfo['worker'] = threading.Thread(
 				target=self.sendRtp,
 				daemon=True
@@ -134,38 +135,31 @@ class ServerWorker:
 			data = self.clientInfo['videoStream'].nextFrame()
 			if data: 
 				try:
-					address = self.clientInfo['clientAddr']
-					port = int(self.clientInfo['rtpPort'])
+					address = self.clientInfo['clientAddr'] # Lấy địa chỉ client
+					port = int(self.clientInfo['rtpPort']) # Xác định cổng port mà RTP gửi đến
 					
-					# Giao thức UDP có giới hạn kích thước gói tin (MTU - Maximum Transmission Unit).
-					# Nếu gửi 1 frame ảnh lớn (>65KB) sẽ bị lỗi hoặc bị router chặn.
-					# Giải pháp: Chia nhỏ frame thành các đoạn payload nhỏ hơn (1400 bytes).
-					# UDP datagram limit: thường là 65535 bytes max, nhưng limit thực tế khoảng 1472 bytes
-
-					PAYLOAD_SIZE = 1400
+					# UDP datagram limit: typically 65535 bytes max, but practical limit is around 1472 bytes
+					# Fragment large frames into multiple RTP packets
+					PAYLOAD_SIZE = 1400  # Leave room for RTP header (12 bytes) and IP/UDP headers
 					
-					# Gửi frame theo chunks
-					num_chunks = (len(data) + PAYLOAD_SIZE - 1) // PAYLOAD_SIZE
+					# Send frame in chunks
+					num_chunks = (len(data) + PAYLOAD_SIZE - 1) // PAYLOAD_SIZE # Công thức làm tròn lên
 					for chunk_idx in range(num_chunks):
 						start = chunk_idx * PAYLOAD_SIZE
 						end = min(start + PAYLOAD_SIZE, len(data))
 						chunk = data[start:end]
-
-						# Kiểm tra xem đây có phải là mảnh cuối cùng của frame không?
-						# Nếu đúng, set Marker bit = 1 để Client biết là đã nhận đủ frame.
+						# Set marker bit (1) on the last packet of the frame
 						is_last_chunk = (chunk_idx == num_chunks - 1)
-
 						packet = self.makeRtp(chunk, seq_number, is_last_chunk)
 						self.clientInfo['rtpSocket'].sendto(packet, (address, port))
-
-						# Sequence Number là số 16-bit, cần quay vòng về 0 khi vượt quá 65535
-						seq_number = (seq_number + 1) % 65536
+						seq_number = (seq_number + 1) % 65536  # Wrap around 16-bit counter, tăng seq_number
 						
 				except Exception as e:
 					print(f"Connection Error: {e}")
-
-			# Điều khiển tốc độ gửi (Congestion Control đơn giản)
-			time.sleep(0.05)
+					#print('-'*60)
+					#traceback.print_exc(file=sys.stdout)
+					#print('-'*60)
+			time.sleep(0.05) # FPS = 20
 
 	def makeRtp(self, payload, seqnum, is_marker=False):
 		"""RTP-packetize the video data."""
@@ -173,8 +167,8 @@ class ServerWorker:
 		padding = 0
 		extension = 0
 		cc = 0
-		marker = 1 if is_marker else 0 # Bit Marker quan trọng để đánh dấu kết thúc Frame
-		pt = 26 # MJPEG payload type
+		marker = 1 if is_marker else 0  # Set marker on last packet of frame
+		pt = 26 # MJPEG type
 		ssrc = 0 
 		
 		rtpPacket = RtpPacket()
@@ -186,9 +180,11 @@ class ServerWorker:
 	def replyRtsp(self, code, seq, extra_data = None): # Thêm 1 parameter (để truyền vào total frames)
 		"""Send RTSP reply to the client."""
 		if code == self.OK_200:
+			#print("200 OK")
 			reply = 'RTSP/1.0 200 OK\nCSeq: ' + seq + '\nSession: ' + str(self.clientInfo['session'])
-			if extra_data: # Nếu có dữ liệu
+			if extra_data: # Nếu có dữ liệu mở rộng
 				reply += '\n' + extra_data
+			# Gửi phản hồi qua TCP
 			connSocket = self.clientInfo['rtspSocket'][0]
 			connSocket.send(reply.encode())
 		

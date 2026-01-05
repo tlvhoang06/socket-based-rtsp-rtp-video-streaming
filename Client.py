@@ -425,7 +425,7 @@ class Client:
                     break
             except:
                 break
-    
+     
     def parseRtspReply(self, data):
         """Parse the RTSP reply from the server."""
         lines = data.split('\n')
